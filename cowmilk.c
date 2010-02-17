@@ -4,6 +4,7 @@
 #include <string.h>
 
 #ifdef G_OS_UNIX
+  #include <errno.h>
   #include <signal.h>
   #include <unistd.h>
   #include <sys/socket.h>
@@ -57,10 +58,13 @@ static int    g_sock;
 static GList *g_client_channels;
 static GList *g_client_sockets;
 
+#define fatal(X) \
+    gtk_err (X); 
+
 static GtkWidget *create_setup();
 static struct wsess *create_wsession();
 static void start_server_cb (GtkDialog *dlg, gint resp, gpointer ud);
-static void* server_thread (void *ud);
+void server_thread (int port);
 static gboolean receive_cb (GIOChannel *src, GIOCondition cond, gpointer ud);
 static gboolean disconnected_cb (GIOChannel *src, GIOCondition cond, gpointer ud);
 static void send_cb (GtkButton *btn, gpointer ud);
@@ -190,6 +194,10 @@ static long bytes_available (int sock) {
     return 0;
 }
 
+int space_character (char c) {
+    return (c == ' ' || c == '\t' || c == '\n');
+}
+
 static void send_cb (GtkButton *btn, gpointer ud) {
     struct session *ses = (struct session *) ud;
     GtkTextIter start, end;
@@ -207,17 +215,28 @@ static void send_cb (GtkButton *btn, gpointer ud) {
 
     size = strlen (text);
     buffer = malloc (size);
-    for (i = 0; i < size; i++) {
+    for (i = 0; i < size;) {
         long byte = strtol (ptr, &endptr, 16);
         if (ptr == endptr) {
-            gtk_err ("Parse error!");
-            g_free (text);
-            free (buffer);
-            return;
+            int j, spaces = 0;
+            for (j = i; j < size ; j++) {
+                if (!space_character (text [j])) {
+                    gtk_err ("Parse error!");
+                    g_free (text);
+                    free (buffer);
+                    return;
+                }
+                else
+                    ++spaces;
+            }
+            if (spaces == size - i)
+                break; /* line ending with white space */
         }
 
-        buffer[ actual++ ] = byte;
+        buffer [actual++] = byte;
+
         if (*endptr == '\0') break;
+        i += (endptr - ptr);
         ptr = endptr;
     }
 
@@ -234,16 +253,11 @@ static gboolean receive_cb (GIOChannel *src, GIOCondition cond, gpointer ud) {
     unsigned char *buffer;
     gchar title[256];
     long size;
-    static GMutex *mutex = NULL;
 
     if (!src || !ud) {
         g_print ("some error in cb\n");
         return FALSE;
     }
-
-    if (!mutex)
-        mutex = g_mutex_new();
-    g_mutex_lock (mutex);
 
     /* dump the received bytes in the session window */
     ses = (struct session *) ud;
@@ -252,86 +266,74 @@ static gboolean receive_cb (GIOChannel *src, GIOCondition cond, gpointer ud) {
     buffer = malloc (size);
     recv (ses->sock, buffer, size, MSG_WAITALL);
 
-    gdk_threads_enter();
     gtk_buffer_dump (ses, buffer, size, dcn_in );
     g_sprintf (title, "TCP/IP Session with %s", inet_ntoa (ses->sa.sin_addr));
     gtk_window_set_title (GTK_WINDOW (ses->ws->window), title);
     gtk_widget_show (ses->ws->window);
-    gdk_flush ();
-    gdk_threads_leave();
-
-    g_mutex_unlock (mutex);
     
     return FALSE;
 }
 
-static void *server_thread (void *ud) {
-    int port;
+void server_thread (int port) {
     struct sockaddr_in sa;
 
-    port = GPOINTER_TO_INT (ud);
     g_print("Server wakes up on port %d\n", port);
 
     /* create socket and open port */
     g_sock = socket (PF_INET, SOCK_STREAM, 0);
     if (g_sock == -1) {
-        gdk_threads_enter();
-        gtk_err ("Failed to create socket");
-        gdk_threads_leave();
-        exit (0);
+        printf ("OOps with code %d", errno);
+        fflush (stdout);
+        exit (1);
     }
 
+    /* set SO_REUSEADDR to make application able to restart quickly */
     int on = 1;
-    if (setsockopt (g_sock, SOL_SOCKET, SO_REUSEADDR, (char *) &on, sizeof(on)) < 0) {
-        g_printf ("shit!");
-        exit (0);
-    }
+    if (setsockopt (g_sock, SOL_SOCKET, SO_REUSEADDR, (char *) &on, sizeof(on)) == -1)
+        fatal ("Failed to set SO_REUSEADDR socket option");
+
+    int val;
+    val = fcntl (g_sock, F_GETFL, 0);
+    if (fcntl (g_sock, F_SETFL, val | O_NONBLOCK) == -1)
+        fatal ("Failed to turn socket into non-blocking mode");
     
     memset (&sa, 0, sizeof (sa));
     sa.sin_family = PF_INET;
     sa.sin_port = htons (port);
     sa.sin_addr.s_addr = htonl (INADDR_ANY);
 
-    if (bind (g_sock, (struct sockaddr *) &sa, sizeof (sa)) == -1) {
-        gdk_threads_enter();
-        gtk_err ("Binding failed");
-        gdk_threads_leave();
-        exit (0);
-    }
+    if (bind (g_sock, (struct sockaddr *) &sa, sizeof (sa)) == -1)
+        fatal ("Failed to bind socket");
     
-    if (listen (g_sock, SOMAXCONN) != 0) {
-        gdk_threads_enter();
-        gtk_err ("Listening failed");
-        gdk_threads_leave();
-        exit (0);
-    }
+    if (listen (g_sock, SOMAXCONN) != 0)
+        fatal ("Failed to listen on socket");
 
     for ever {
         struct session *ses;
         socklen_t clsl;
 
-        if (!g_sock)
-            return 0;
-        
+        if (g_sock == 0)
+            return; /* good night, sweet prince */
+      
         ses  = calloc (1, sizeof (struct session));
         clsl = sizeof (ses->sa);
-        
-        gdk_threads_enter();
+
         ses->ws = create_wsession (ses);
-        gdk_threads_leave();
 
         /* wait while client will connect */
-/*         while ((ses->sock = */
-/*                 accept (g_sock, (struct sockaddr *) &ses->sa, &clsl)) */
-/*                == EINVAL) */
-/*             gtk_main_iteration_do (FALSE); */
-        ses->sock = accept (g_sock, (struct sockaddr *) &ses->sa, &clsl);
+        ses->sock = -1;
+        while (g_sock != 0 && (ses->sock == EAGAIN || ses->sock < 0)) {
+            ses->sock = accept (g_sock, (struct sockaddr *) &ses->sa, &clsl);
 
-        if (!g_sock) {
-            free (ses);
-            return 0;
+            while (gtk_events_pending ())
+                gtk_main_iteration ();
+
+            g_usleep (10000);
         }
-        
+
+        if (g_sock == 0)
+            return; /* it could changed here after catching SIGINT */
+      
 #ifdef G_OS_UNIX
         ses->chan = g_io_channel_unix_new (ses->sock);
 #elif defined (G_OS_WIN32)
@@ -343,14 +345,14 @@ static void *server_thread (void *ud) {
         g_client_sockets  = g_list_append (g_client_sockets, GINT_TO_POINTER (ses->sock));
         ses->cond = cond_on;
 
-        ses->rwatch = g_io_add_watch (ses->chan, G_IO_IN | G_IO_PRI, receive_cb,
-                                      ses);
+        ses->rwatch = g_io_add_watch (ses->chan, G_IO_IN | G_IO_PRI,
+                                      receive_cb, ses);
         ses->dwatch = g_io_add_watch (ses->chan, G_IO_ERR | G_IO_HUP | G_IO_NVAL,
                                       disconnected_cb, ses);
         g_print ("new client has connected\n");
     }
     
-    return 0;
+    return;
 }
 
 static void start_server_cb (GtkDialog *dlg, gint resp, gpointer ud) {
@@ -365,7 +367,7 @@ static void start_server_cb (GtkDialog *dlg, gint resp, gpointer ud) {
         port = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (spin));
         
         gtk_widget_destroy (GTK_WIDGET (dlg));
-        g_thread_create (server_thread, GINT_TO_POINTER (port), FALSE, NULL);
+        server_thread (port);
     }
 }
 
@@ -416,7 +418,7 @@ static struct wsess *create_wsession (struct session *ses) {
                                          GTK_SHADOW_ETCHED_IN);
     
     gtk_container_add (GTK_CONTAINER (sw), ws->dump);
-    gtk_paned_pack1 (GTK_PANED(paned), sw, TRUE, TRUE);
+    gtk_paned_pack1 (GTK_PANED (paned), sw, TRUE, TRUE);
     gtk_widget_set_size_request (sw, 300, 200);
 
     ws->entry = gtk_text_view_new ();
@@ -487,17 +489,13 @@ void catch_int (int segnum) {
 int main (int argc, char *argv[]) {
     GtkWidget *setup;
 
-    g_thread_init (NULL);
-    gdk_threads_init ();
     gtk_init (&argc, &argv);
     signal (SIGINT, catch_int);
 
     setup = create_setup ();
     gtk_widget_show (setup);
 
-    gdk_threads_enter ();
     gtk_main();
-    gdk_threads_leave ();
     
     return 0;
 }
