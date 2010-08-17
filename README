@@ -1,0 +1,52 @@
+ABOUT
+  cowmilk is a tiny TCP/IP server with GTK+ user interface.
+
+  You can start the server on any port and than wait for a client connections.
+  When a client connects on this port, cowmilk pops up a chat dialog. The chat
+  dialog consists of two parts: on the top there is a hexadecimal dump of the
+  incoming/outgoing traffic, and there is an input area at the bottom.
+  Everything you will type there in the hexadecimal format will be sent to the
+  client as a TCP payload. And that's all.
+
+  cowmilk was developed as a one-time solution and the code is not perfect.
+  Do not judge it strictly :)
+  
+
+AUTHORS
+  Dmitry Matveev <dmatveev@inbox.com>
+
+
+SUCCESS STORIES
+  This application was originally developed and intented for the only purpose -
+  I needed a tool for debugging SCEP client on Nortel 11x0/i2007 IP Sets. Since
+  March 2009 we have successfully emulated the required behavior for some times
+  in order to reproduce the problems with cowmilk.
+
+
+NAME
+  The name was coined by my dear friends. Thanks them for the creative.
+  To give a name to the program is always trouble for me.  
+
+
+LICENSE
+  cowmilk is released under MIT License.
+        
+  Copyright (c) 2009-2010 Dmitry Matveev <dmatveev@inbox.com>
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
