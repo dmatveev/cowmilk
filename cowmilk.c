@@ -516,7 +516,6 @@ int main (int argc, char *argv[]) {
 
     setup = create_setup ();
     gtk_widget_show (setup);
-
     gtk_main();
     
     return 0;
