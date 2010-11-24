@@ -18,7 +18,7 @@ AUTHORS
 
 SUCCESS STORIES
   This application was originally developed and intented for the only purpose -
-  I needed a tool for debugging SCEP client on Nortel 11x0/i2007 IP Sets. Since
+  I needed a tool for debugging SCEP client on hardware VoIP phones. Since
   March 2009 we have successfully emulated the required behavior for some times
   in order to reproduce the problems with cowmilk.
 
